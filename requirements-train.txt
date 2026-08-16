@@ -1,0 +1,8 @@
+# Colab T4 environment. torch is preinstalled by Colab and deliberately
+# NOT pinned here — pinning it forces a multi-GB reinstall and often
+# breaks the CUDA build Colab ships.
+transformers>=4.44
+datasets>=2.20
+peft>=0.12
+bitsandbytes>=0.43
+accelerate>=0.33

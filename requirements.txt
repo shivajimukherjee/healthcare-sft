@@ -1,0 +1,11 @@
+# Local environment: data prep, metrics, tests. No GPU training here.
+# Version floors, not exact pins: these APIs are stable and floors avoid
+# resolver deadlock on macOS ARM. Exact resolved versions are captured in
+# requirements.lock.txt.
+torch>=2.2
+transformers>=4.44
+datasets>=2.20
+scikit-learn>=1.4
+rouge-score>=0.1.2
+matplotlib>=3.8
+pytest>=8.0
