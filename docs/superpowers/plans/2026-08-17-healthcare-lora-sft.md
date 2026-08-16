@@ -458,6 +458,21 @@ def _tok():
     return AutoTokenizer.from_pretrained(BASE_MODEL)
 
 
+def test_masked_prefix_is_the_whole_prompt_not_a_token_or_two():
+    tok = _tok()
+    msgs = build_classification_messages("itchy rash", LABELS, answer="psoriasis")
+    ex = build_training_example(msgs, tok, max_length=1024)
+
+    n_masked = sum(1 for t in ex["labels"] if t == IGNORE_INDEX)
+    # Regression guard. transformers 5.x returns a BatchEncoding from
+    # apply_chat_template(tokenize=True); len() on it is 2, so a naive
+    # implementation masks two tokens and trains on its own prompt without
+    # ever raising. The prompt here is dozens of tokens long.
+    assert n_masked > 20
+    # And the masked region must be a prefix, never scattered.
+    assert ex["labels"][:n_masked] == [IGNORE_INDEX] * n_masked
+
+
 def test_input_ids_and_labels_have_equal_length():
     tok = _tok()
     msgs = build_classification_messages("itchy rash", LABELS, answer="psoriasis")
@@ -559,6 +574,25 @@ import torch
 IGNORE_INDEX = -100  # the value torch's cross-entropy skips
 
 
+def _token_ids(encoded):
+    """Normalize apply_chat_template(tokenize=True) output to a flat list[int].
+
+    This is version-defensive on purpose. transformers 4.x returns a plain
+    list[int] here; transformers 5.x returns a BatchEncoding (dict-like).
+    Calling len() on a BatchEncoding returns 2 — the number of keys — so a
+    naive implementation would mask exactly two tokens and silently train the
+    model on its own prompt. That bug does not raise, so we normalize once,
+    here, and let every caller assume a flat list.
+    """
+    if isinstance(encoded, dict):  # BatchEncoding subclasses dict
+        encoded = encoded["input_ids"]
+    if hasattr(encoded, "tolist"):  # torch/np tensor
+        encoded = encoded.tolist()
+    if encoded and isinstance(encoded[0], list):  # a batch of one
+        encoded = encoded[0]
+    return list(encoded)
+
+
 def render_prompt(messages, tokenizer):
     """Render messages as a string ending in the assistant header.
 
@@ -579,12 +613,16 @@ def build_training_example(messages, tokenizer, max_length):
     """
     # Tokenize the prompt alone (system + user), with the assistant header
     # appended. Its length is exactly how many positions we must mask.
-    prompt_ids = tokenizer.apply_chat_template(
-        messages[:-1], tokenize=True, add_generation_prompt=True
+    prompt_ids = _token_ids(
+        tokenizer.apply_chat_template(
+            messages[:-1], tokenize=True, add_generation_prompt=True
+        )
     )
     # Tokenize the whole conversation including the assistant answer.
-    full_ids = tokenizer.apply_chat_template(
-        messages, tokenize=True, add_generation_prompt=False
+    full_ids = _token_ids(
+        tokenizer.apply_chat_template(
+            messages, tokenize=True, add_generation_prompt=False
+        )
     )
 
     # Our masking assumes prompt_ids is a literal prefix of full_ids. That holds
@@ -635,7 +673,7 @@ class PadCollator:
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_tokenization.py -v`
-Expected: 6 passed.
+Expected: 7 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1115,7 +1153,7 @@ Expected: 12 passed.
 - [ ] **Step 5: Run the whole suite**
 
 Run: `.venv/bin/python -m pytest -v`
-Expected: 34 passed.
+Expected: 35 passed.
 
 - [ ] **Step 6: Commit**
 
@@ -1899,7 +1937,7 @@ From `docs/CONCEPTS.md` §10.
 ```bash
 .venv/bin/python -m pytest -v
 ```
-Expected: 34 passed.
+Expected: 35 passed.
 
 - [ ] **Step 4: Verify every README number against `results/metrics.json`**
 
@@ -1919,7 +1957,7 @@ git push
 
 ## Definition of Done
 
-- [ ] `.venv/bin/python -m pytest` passes (34 tests)
+- [ ] `.venv/bin/python -m pytest` passes (35 tests)
 - [ ] `data/` contains four files; the label count is 22
 - [ ] `adapters/qwen-healthcare-lora/` contains `adapter_config.json` and `adapter_model.safetensors`
 - [ ] `results/metrics.json` contains **both** `base` and `tuned` entries for both tasks
