@@ -569,6 +569,8 @@ lines, because it removes a fast-moving dependency, and because it is worth
 being able to explain.
 """
 
+from collections.abc import Mapping
+
 import torch
 
 IGNORE_INDEX = -100  # the value torch's cross-entropy skips
@@ -583,8 +585,14 @@ def _token_ids(encoded):
     naive implementation would mask exactly two tokens and silently train the
     model on its own prompt. That bug does not raise, so we normalize once,
     here, and let every caller assume a flat list.
+
+    Note the Mapping check rather than `isinstance(encoded, dict)`:
+    BatchEncoding subclasses collections.UserDict, which is NOT a dict
+    subclass, so a dict check silently misses and we fall through to
+    `list(encoded)` — which yields the mapping's KEYS. Same two-token bug by a
+    different route.
     """
-    if isinstance(encoded, dict):  # BatchEncoding subclasses dict
+    if isinstance(encoded, Mapping):  # BatchEncoding is a UserDict, not a dict
         encoded = encoded["input_ids"]
     if hasattr(encoded, "tolist"):  # torch/np tensor
         encoded = encoded.tolist()
