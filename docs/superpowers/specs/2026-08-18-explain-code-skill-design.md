@@ -97,9 +97,25 @@ return class — must be produced by executing code, not by inference. The skill
 2. Writes a throwaway probe script to the scratchpad directory.
 3. Runs it and reads real values into the document.
 
-Where execution is impossible (missing dependencies, code requiring a GPU,
-network access, or credentials), the skill states the limitation inline in the
-document rather than substituting a guess:
+Before executing anything, the skill runs a pre-flight check on the target,
+because importing a module runs its top-level code:
+
+- **Top-level side effects** — module-level code that writes files, opens
+  network connections, mutates a database, spawns processes, or reads
+  credentials. If present, the skill does not import the module. It probes
+  individual pure functions in isolation instead, or falls back to static
+  description.
+- **Cost** — code that downloads checkpoints, trains, or runs for more than a
+  few seconds is not executed.
+- **Scope** — probes may write only inside the scratchpad directory. A probe
+  that would touch the project tree, the network, or any external service is
+  not run.
+
+This makes the rule symmetric: the skill refuses to guess, and it equally
+refuses to find out by causing side effects. When either execution is
+impossible (missing dependencies, GPU, credentials) or it is unsafe under the
+checks above, the skill states the limitation inline rather than substituting
+a guess:
 
 > `> Not executed: requires a downloaded model checkpoint. Shape below is read
 > from the transformers source, not observed.`
@@ -115,6 +131,22 @@ checklist — the skill verifies before finishing that each row is addressed in
 at least one pass. This converts "explain everything" from an aspiration into
 a checkable postcondition.
 
+### Scale
+
+Three full passes suit a file of roughly 50-300 lines. Outside that band the
+skill adapts rather than producing something unusable:
+
+- **Under ~50 lines** — passes collapse into one narrative. A trivial file
+  does not need a six-section document, and padding it to fit the template
+  teaches nothing.
+- **Over ~400 lines** — the skill does not silently produce a 5,000-word
+  document. It reports the size, proposes a split along the file's natural
+  seams (a class, a group of related functions), and asks which unit to
+  explain. Whole-file inventory and orientation are still produced, so the
+  map exists even when the detail is scoped.
+
+The band is a heuristic for the skill's judgement, not a hard check.
+
 ## Output document structure
 
 ```
@@ -123,7 +155,10 @@ a checkable postcondition.
 
 ## 0. Orientation
     What problem this file solves — one paragraph, plain language.
-    Where it sits: what imports it, what it imports.
+    Where it sits: what imports it, what it imports. Callers are found by
+    searching the repository, not assumed — some files (base classes,
+    config modules, mixins) are close to meaningless read alone, and for
+    those the caller list is the orientation.
     The one-sentence version.
 
 ## 1. Inventory
@@ -143,9 +178,10 @@ a checkable postcondition.
     ─── PASS 2 · DATA AND SHAPES ───
 
 ## 3. What the data looks like
-    Same walk, data lens. For every variable that holds data: type, shape,
-    dtype, and a real example value obtained by execution.
-    · ASCII diagrams for tensor and list shapes
+    Same walk, data lens. For every variable that holds data: its type, its
+    structure, and a real example value obtained by execution.
+    "Structure" is domain-dependent — see Data-contract vocabulary below.
+    · ASCII diagrams where structure is positional (arrays, buffers, masks)
     · One mermaid flowchart of data movement through the file
     · Borrowed-API ledger (see below)
 
@@ -165,6 +201,24 @@ a checkable postcondition.
     Every piece of jargon used anywhere above, one line each.
 ```
 
+### Data-contract vocabulary
+
+Pass 2 asks "what does the data look like at this point". The right answer
+depends on the domain, and the skill picks the vocabulary that fits rather
+than forcing numeric framing onto code that has none:
+
+| Domain | "Structure" means |
+|---|---|
+| Numeric / ML | shape, dtype, device, value range |
+| Web / API | request and response schema, status codes, content type |
+| CLI | argument grammar, exit codes, stdin/stdout format |
+| Data processing | column names and types, row count, index, null policy |
+| UI components | props and their types, state shape, event payloads |
+| General | key set for dicts, element type for sequences, invariants held |
+
+The requirement is constant — describe the real data concretely, with an
+observed example. Only the vocabulary changes.
+
 ### The borrowed-API ledger
 
 The section addressing the stated core need — understanding which parameters
@@ -175,7 +229,8 @@ and behaviours come from other packages:
 | `tokenizer.apply_chat_template(...)` | `transformers` | `BatchEncoding` in 5.x, `list[int]` in 4.x | `tokenize`, `add_generation_prompt` | `messages` | High — return type changed between majors |
 
 "Version risk" flags calls whose contract has changed or may change across
-library versions. This is where silent breakage lives, and it is invisible
+library versions. It is set to `unknown` when the library's history is not
+established — an invented risk assessment is worse than an absent one. This is where silent breakage lives, and it is invisible
 when reading the file alone.
 
 ### Diagram policy
@@ -209,15 +264,41 @@ The skill enforces five rules, checked before the document is written:
 5. **Concrete over abstract** — real values and real numbers, never "some
    list" or "a tensor of the appropriate shape".
 
-## Language scope
+## Generality
 
-The document structure is language-agnostic. Pass 1's construct checklist is
-Python-specific and lives in its own reference file, so a second file can be
-added later for another language without touching the procedure.
+The skill must work on any script, not only the numeric Python that motivated
+it. Stating plainly what is universal and what is not:
 
-Python is the only supported Pass-1 language at first. For a file in another
-language the skill still produces sections 0, 1, 3, 4, 5 and 6, and states in
-section 2 that a construct checklist is unavailable for that language.
+**Universal — applies to any file in any language:**
+
+- The six-section document structure
+- The three-floor calibration (mechanics, data, design)
+- The inventory table as a completeness postcondition
+- The borrowed-API ledger — every language has library seams
+- Break-it exercises, glossary, and all five quality-bar rules
+
+**Parameterised by domain — the skill selects, the structure does not change:**
+
+- Pass 2's vocabulary for "structure" (see Data-contract vocabulary)
+- Whether ASCII shape diagrams apply at all — they suit positional data, and
+  are omitted for code whose data is not positional
+- Which concepts Pass 3 names, each pinned to a line number
+
+**Language-specific — needs a reference file per language:**
+
+- Pass 1's construct checklist. Python ships first, in
+  `references/python-constructs.md`. Adding JavaScript or Go means adding a
+  sibling file, not touching the procedure.
+- The interpreter and probe mechanism used for execution.
+
+For a file in a language with no construct checklist yet, the skill still
+produces sections 0, 1, 3, 4, 5 and 6, and states in section 2 that a
+checklist is unavailable — it does not improvise one, because a half-known
+language produces confidently wrong syntax explanations, which is the worst
+possible output for a learner.
+
+**Not supported:** binary files, generated code, vendored dependencies, and
+files over a few thousand lines. The skill says so and stops.
 
 ## Staleness
 
