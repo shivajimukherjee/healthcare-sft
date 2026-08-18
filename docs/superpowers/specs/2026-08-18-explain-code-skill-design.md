@@ -54,6 +54,12 @@ This is why the document uses three passes rather than one merged narrative
 (see Architecture). A single pass forces a choice of floor and loses the other
 two.
 
+**The passes are sequential and cumulative, not independently readable.** Pass
+2 assumes Pass 1 has been read. Where Pass 2 or 3 needs a construct explained
+earlier, it uses a back-reference (`__call__`, see §2`) rather than restating
+it — one line, and the no-repetition rule survives. Only §0 Orientation stands
+alone.
+
 ## Architecture
 
 ### Packaging
@@ -83,9 +89,35 @@ Single file per invocation. Writes to `docs/explainers/<basename>.md` relative
 to the repository root, creating the directory if absent. The output path is
 reported so the file can be opened immediately.
 
+The document is the start of a conversation, not the end of one. Follow-up is
+plain dialogue in the same session — "go deeper on §3", "I still do not
+understand the collator" — and anything worth keeping from that exchange is
+folded into the document by re-running the command or by the reader writing it
+into `## 7. My notes`. No separate refine flag; the chat already does this
+well, and a flag would only add a worse interface to it.
+
 If the target repository has no `docs/` directory, the skill writes to
 `explainers/<basename>.md` at the repository root instead, rather than
 inventing a `docs/` tree in a project that does not use one.
+
+### Sources of intent
+
+Pass 3 asks why the code is built this way. Reverse-engineering that from the
+source is the last resort, not the first move — for code generated in a
+Claude Code session, the rationale was usually written down at the time. The
+skill looks for it, in this order, before reasoning from scratch:
+
+1. Module and function docstrings — often the densest statement of intent.
+2. Design specs and implementation plans (`docs/superpowers/specs/`,
+   `docs/superpowers/plans/`, `docs/`, `ADR*`, `RFC*`) mentioning the file or
+   its symbols.
+3. `git log --follow` on the file — commit messages explaining changes.
+4. Tests, which encode the intended contract as executable statements.
+
+Recovered rationale is cited to its source (`per docs/.../design.md`) and kept
+distinct from the skill's own inference, which is marked as such. A learner
+needs to know which claims are the author's and which are a reader's
+interpretation.
 
 ### Verification requirement
 
@@ -123,6 +155,14 @@ a guess:
 A guessed shape presented as fact is the primary way an explainer teaches
 something wrong, so this rule is not optional.
 
+The same requirement covers the §5 exercises. Every "predict what breaks"
+answer is obtained by copying the file to the scratchpad, making the change
+there, running it, and recording what actually happened — never by predicting
+it. The exercises are the part of the document a learner will trust most,
+because they look like a test; a wrong answer there installs a wrong mental
+model with the learner's full confidence behind it. Where an exercise cannot
+be executed, it is cut rather than answered speculatively.
+
 ### Completeness mechanism
 
 Section 1 of every document is an inventory table of every module-level
@@ -131,13 +171,36 @@ checklist — the skill verifies before finishing that each row is addressed in
 at least one pass. This converts "explain everything" from an aspiration into
 a checkable postcondition.
 
+### Correctness check
+
+The completeness mechanism guarantees every symbol is *mentioned*. It says
+nothing about whether what is said is *true*, and a plausible-sounding wrong
+explanation is the one failure a learner cannot detect — they have no
+independent basis for doubt. This is the highest-stakes failure mode of the
+whole skill.
+
+So before writing the document, the skill re-reads its own draft against the
+source with one question per claim: what in the source establishes this? Each
+conceptual claim resolves to exactly one of:
+
+- **Grounded** — traceable to a specific line, an executed probe, a test, or a
+  cited design document. Keep it.
+- **Inference** — a reasonable reading, but not stated anywhere. Keep it,
+  marked as inference.
+- **Unsupported** — cannot be traced at all. Cut it. An explainer that omits
+  something is incomplete; one that asserts something false is harmful, and
+  the two are not equally bad.
+
+This check is adversarial by design: the pass looks for claims to falsify, not
+for confirmation that the draft reads well.
+
 ### Scale
 
 Three full passes suit a file of roughly 50-300 lines. Outside that band the
 skill adapts rather than producing something unusable:
 
 - **Under ~50 lines** — passes collapse into one narrative. A trivial file
-  does not need a six-section document, and padding it to fit the template
+  does not need an eight-section document, and padding it to fit the template
   teaches nothing.
 - **Over ~400 lines** — the skill does not silently produce a 5,000-word
   document. It reports the size, proposes a split along the file's natural
@@ -181,6 +244,8 @@ The band is a heuristic for the skill's judgement, not a hard check.
     Same walk, data lens. For every variable that holds data: its type, its
     structure, and a real example value obtained by execution.
     "Structure" is domain-dependent — see Data-contract vocabulary below.
+    Example values are taken from the file's tests where they exist — they
+    are already concrete, already correct, and already exercised.
     · ASCII diagrams where structure is positional (arrays, buffers, masks)
     · One mermaid flowchart of data movement through the file
     · Borrowed-API ledger (see below)
@@ -188,17 +253,23 @@ The band is a heuristic for the skill's judgement, not a hard check.
     ─── PASS 3 · DESIGN AND WHY ───
 
 ## 4. Why it is built this way
-    Programming concepts actually in play, each pinned to a line number —
-    named honestly, not padded. Design decisions and the alternatives
-    rejected. Where the bugs hide and what this code defends against. How
-    the tests pin the behaviour down.
+    Programming concepts actually in play, each anchored to a symbol and a
+    quoted excerpt — named honestly, not padded. Design decisions and the
+    alternatives rejected, cited to their source where one exists. Where the
+    bugs hide and what this code defends against. How the tests pin the
+    behaviour down.
 
 ## 5. Break it
     3–5 exercises: "change this line, predict what happens."
-    Answers in a collapsed <details> block at the end.
+    Answers obtained by actually running the change, in a collapsed
+    <details> block at the end.
 
 ## 6. Glossary
     Every piece of jargon used anywhere above, one line each.
+
+## 7. My notes
+    Empty on first generation. Everything below this heading is preserved
+    verbatim across regeneration — it belongs to the reader, not the skill.
 ```
 
 ### Data-contract vocabulary
@@ -230,8 +301,25 @@ and behaviours come from other packages:
 
 "Version risk" flags calls whose contract has changed or may change across
 library versions. It is set to `unknown` when the library's history is not
-established — an invented risk assessment is worse than an absent one. This is where silent breakage lives, and it is invisible
-when reading the file alone.
+established — an invented risk assessment is worse than an absent one. This
+is where silent breakage lives, and it is invisible when reading the file
+alone.
+
+### Anchoring policy
+
+Claims point at code by **symbol name plus a short quoted excerpt**, with the
+line number as a trailing convenience:
+
+> `PadCollator.__call__` — `max_len = max(len(f["input_ids"]) for f in features)` (~line 119)
+
+Line numbers alone are not used as anchors. They break on the next edit, and a
+document whose pointers all land three lines off is worse than one with no
+pointers at all — the reader follows it, finds unrelated code, and stops
+trusting the document. An excerpt is greppable, so it survives edits and can
+be relocated by searching for it.
+
+The anti-padding property is preserved and in fact strengthened: a concept
+cannot be claimed without quoting the code that exhibits it.
 
 ### Diagram policy
 
@@ -251,17 +339,22 @@ decorative diagrams.
 
 ## Quality bar
 
-The skill enforces five rules, checked before the document is written:
+The skill enforces seven rules, checked before the document is written:
 
 1. **Completeness** — every row of the inventory table is addressed in at
    least one pass.
-2. **No repetition** — nothing is explained twice at the same level. Passes
-   revisit the same code through different lenses, never the same lens twice.
-3. **Executed, not guessed** — every runtime claim traces to a command that
-   was run, or is explicitly labelled as unverified.
-4. **No forward references** — no term is used before it is defined. The
+2. **Correctness over completeness** — every conceptual claim is grounded,
+   marked as inference, or cut. When the two rules conflict, this one wins: a
+   gap is a smaller harm than a confident falsehood.
+3. **Executed, not guessed** — every runtime claim and every exercise answer
+   traces to a command that was run, or is explicitly labelled as unverified.
+4. **Anchored** — claims about code quote the code, by symbol and excerpt.
+5. **No repetition** — nothing is explained twice at the same level. Later
+   passes revisit the same code through a different lens, or back-reference
+   the earlier explanation; they never repeat it.
+6. **No forward references** — no term is used before it is defined. The
    glossary is a backstop, not a substitute.
-5. **Concrete over abstract** — real values and real numbers, never "some
+7. **Concrete over abstract** — real values and real numbers, never "some
    list" or "a tensor of the appropriate shape".
 
 ## Generality
@@ -271,18 +364,18 @@ it. Stating plainly what is universal and what is not:
 
 **Universal — applies to any file in any language:**
 
-- The six-section document structure
+- The eight-section document structure
 - The three-floor calibration (mechanics, data, design)
 - The inventory table as a completeness postcondition
 - The borrowed-API ledger — every language has library seams
-- Break-it exercises, glossary, and all five quality-bar rules
+- Break-it exercises, glossary, and all seven quality-bar rules
 
 **Parameterised by domain — the skill selects, the structure does not change:**
 
 - Pass 2's vocabulary for "structure" (see Data-contract vocabulary)
 - Whether ASCII shape diagrams apply at all — they suit positional data, and
   are omitted for code whose data is not positional
-- Which concepts Pass 3 names, each pinned to a line number
+- Which concepts Pass 3 names, each anchored to a quoted excerpt
 
 **Language-specific — needs a reference file per language:**
 
@@ -292,7 +385,7 @@ it. Stating plainly what is universal and what is not:
 - The interpreter and probe mechanism used for execution.
 
 For a file in a language with no construct checklist yet, the skill still
-produces sections 0, 1, 3, 4, 5 and 6, and states in section 2 that a
+produces sections 0, 1, 3, 4, 5, 6 and 7, and states in section 2 that a
 checklist is unavailable — it does not improvise one, because a half-known
 language produces confidently wrong syntax explanations, which is the worst
 possible output for a learner.
@@ -304,18 +397,51 @@ files over a few thousand lines. The skill says so and stops.
 
 Each document header records the short git hash of the source file at
 generation time. Drift is therefore visible by comparing that hash to the
-current one. No automatic detection or regeneration in the first version —
-re-running the command overwrites the document, which is the whole remedy.
+current one. No automatic detection in the first version — re-running the
+command regenerates the document, which is the whole remedy.
+
+Regeneration is not a silent overwrite. In a learning tool the reader's own
+annotations — their questions, corrections, and the notes they wrote when
+something finally landed — are the most valuable content in the file, and
+destroying them would make the reader reluctant to annotate at all. So:
+
+- Everything under `## 7. My notes` is read before regeneration and written
+  back verbatim.
+- If the reader has edited text *outside* that section, the skill reports what
+  changed and asks before replacing it, rather than clobbering it.
 
 ## Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Document is too long to read | Three passes are separately readable; orientation section stands alone at ~1 paragraph |
-| Explainers drift from code | Git hash in header makes drift visible; regeneration is one command |
-| Execution probe has side effects | Probe scripts are written to the scratchpad, are read-only with respect to the project, and are never committed |
+| Explanation is fluent but wrong, and the learner cannot tell | The adversarial correctness check; claims are grounded, marked as inference, or cut (rule 2) |
+| Document is too long to read | §0 Orientation stands alone at ~1 paragraph; §1 Inventory is the map. The three passes are cumulative, so depth is reached by reading further, not by choosing a starting point |
+| Explainers drift from code | Git hash in header makes drift visible; regeneration is one command; excerpt anchors survive edits that line numbers would not |
+| Regeneration destroys the reader's own annotations | §7 is preserved verbatim; edits elsewhere are reported and confirmed before replacement |
+| Execution probe has side effects | Pre-flight check refuses modules with top-level side effects; probes are scratchpad-only and never committed |
 | Skill guesses shapes when execution fails | Rule 3 requires an explicit unverified label; the failure is surfaced, not hidden |
-| Pass 3 pads with concepts that are not really present | Every concept must be pinned to a line number, which makes padding visible |
+| Exercise answers are wrong, teaching a wrong model with high confidence | Answers are produced by running the change; unrunnable exercises are cut, not guessed |
+| Pass 3 pads with concepts that are not really present | Every concept must quote the code exhibiting it, which makes padding visible |
+| Recovered rationale is mistaken for the skill's own inference | Cited rationale names its source; inference is labelled as inference |
+
+## Acceptance
+
+The skill is working when, run against [src/tokenization.py](../../../src/tokenization.py)
+without prior context, the resulting document answers all of:
+
+1. What does this file do, in one sentence?
+2. What is `__call__` and why does `PadCollator` define it instead of a
+   normal method?
+3. What exactly does `apply_chat_template` return, and which of its arguments
+   are ours versus the library's?
+4. What is the length and content of `labels` for a concrete example, and why
+   is part of it `-100`?
+5. What breaks if `Mapping` is changed to `dict` on the isinstance check —
+   does it raise, or fail silently?
+6. Which claims in the document are observed, and which are inference?
+
+Question 6 is the real test. A document that cannot distinguish its own
+evidence from its own reasoning has failed regardless of how well it reads.
 
 ## Deferred
 
@@ -324,3 +450,9 @@ re-running the command overwrites the document, which is the whole remedy.
 - Whole-directory mode producing a connected overview document.
 - Artifact publishing of a generated explainer.
 - Automatic regeneration via a `PostToolUse` hook.
+- Broader interpreter detection (uv, poetry, conda, pyenv, tox, Windows
+  `.venv/Scripts/python.exe`). Treated as an implementation detail; the first
+  version handles `.venv/bin/python` and `python3`.
+- A shared `docs/explainers/_glossary.md` linked from each document. Until
+  then each document carries its own glossary, duplicated across files, which
+  is the right trade while there are few of them.
