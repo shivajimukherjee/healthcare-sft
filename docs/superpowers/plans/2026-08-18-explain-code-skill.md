@@ -4,66 +4,147 @@
 
 **Goal:** Build a personal-scope Claude Code skill, `/explain-code <path>`, that turns any source file into a persistent eight-section explainer document validated against the source.
 
-**Architecture:** The skill is authored inside this repository at `skills/explain-code/` and symlinked to `~/.claude/skills/explain-code`, so it is version-controlled here but available in every project. `SKILL.md` holds the procedure and stays short; three `references/` files are read only when the procedure reaches them. A stdlib-only validator script makes the mechanical half of the quality bar executable — structure, section order, symbol coverage, anchoring, exercise shape — so those rules fail loudly instead of silently.
+**Architecture:** The skill lives in a new standalone git repository at `~/Developer/claude-skills`, with `~/.claude/skills/explain-code` symlinked to `explain-code/` inside it. A general-purpose tool should not depend on any one project's lifetime, and `~/.claude/` is not version-controlled. `SKILL.md` holds the procedure and stays short; three `references/` files are read only when the procedure reaches them. A stdlib-only validator script makes the mechanical half of the quality bar executable — structure, section order, symbol coverage, anchoring, exercise shape — so those rules fail loudly instead of silently.
 
-**Tech Stack:** Markdown (skill and references), Python 3.11 stdlib only for the validator (`ast`, `re`, `argparse`, `pathlib`), pytest for the validator's tests.
+**Tech Stack:** Markdown (skill and references), Python standard library only for the validator (`ast`, `re`, `argparse`, `pathlib`), pytest as a dev-only dependency for its tests.
 
-**Spec:** [docs/superpowers/specs/2026-08-18-explain-code-skill-design.md](../specs/2026-08-18-explain-code-skill-design.md)
+**Spec:** [docs/superpowers/specs/2026-08-18-explain-code-skill-design.md](../specs/2026-08-18-explain-code-skill-design.md) — lives in healthcare-sft. Read it there; it does not need copying into the skills repo.
+
+## Working directory
+
+**Tasks 1-8 run in `~/Developer/claude-skills`** (created in Task 1). Every relative path in those tasks is relative to that repository root.
+
+**Tasks 9-10 run in `~/Developer/healthcare-sft`**, because they generate explainers for that project's code. They invoke the validator by absolute path.
 
 ## Global Constraints
 
-- **Validator uses the standard library only.** It runs inside arbitrary projects with unknown dependencies; a third-party import would make it fail exactly where it is needed most.
-- **Python 3.11** — the repo venv at `.venv/bin/python` is 3.11.15. Run all tests with `.venv/bin/python -m pytest`.
+- **Validator uses the standard library only.** It runs inside arbitrary projects with unknown dependencies and under whatever interpreter is present; a third-party import would make it fail exactly where it is needed most. pytest is a dev dependency of the skills repo, never an import of the validator.
+- **Interpreter portability is a feature, not an accident.** The skills repo venv is built on the system Python (3.14.3 at `/opt/homebrew/bin/python3`) while healthcare-sft runs 3.11.15. Passing tests on 3.14 and running usefully against a 3.11 project is what proves the validator portable. Do not pin it to either.
+- Run tests with `.venv/bin/python -m pytest` from the skills repo root.
 - **Eight sections, numbered 0-7**, in this exact order: `0. Orientation`, `1. Inventory`, `2. How the code is written`, `3. What the data looks like`, `4. Why it is built this way`, `5. Break it`, `6. Glossary`, `7. My notes`. Headings are `## N. Title` exactly — the validator parses them.
 - **Seven quality rules**, in spec priority order: completeness, correctness over completeness, executed not guessed, anchored, no repetition, no forward references, concrete over abstract.
 - **Anchors are symbol name plus quoted excerpt.** A bare line number is never the only anchor.
 - **Output path:** `docs/explainers/<basename>.md`, falling back to `explainers/<basename>.md` at the repo root when the project has no `docs/` directory.
 - **Probes write only to the scratchpad directory.** Never to the project tree, the network, or any external service.
 - **Section 7 content is preserved verbatim** across regeneration.
-- Repo test convention: tests live in top-level `tests/`, imports are absolute from the repo root (`from src.tokenization import ...`). There is no pytest config file and no conftest.
+- Skills repo layout: one directory per skill at the root, one shared `tests/` at the root. No pytest config file and no conftest — the validator is imported by path, not as a package.
 
 ---
 
 ## File Structure
 
+All paths are inside the new `~/Developer/claude-skills` repository unless stated otherwise.
+
 | Path | Responsibility |
 |---|---|
-| `skills/explain-code/SKILL.md` | The procedure and quality bar. Short — loaded on every invocation. |
-| `skills/explain-code/references/document-template.md` | The literal eight-section output template with per-section instructions. |
-| `skills/explain-code/references/python-constructs.md` | Pass 1 checklist: which Python constructs to name, and how to explain each. |
-| `skills/explain-code/references/diagram-recipes.md` | Mermaid and ASCII patterns, and the rule for when a diagram earns its place. |
-| `skills/explain-code/scripts/validate_explainer.py` | Stdlib-only mechanical validator. Also extracts §7 for preservation. |
-| `tests/test_explainer_validator.py` | Tests for the validator, following the repo's existing `tests/` convention. |
-| `~/.claude/skills/explain-code` | Symlink to `skills/explain-code/`, making the skill globally available. |
+| `explain-code/SKILL.md` | The procedure and quality bar. Short — loaded on every invocation. |
+| `explain-code/references/document-template.md` | The literal eight-section output template with per-section instructions. |
+| `explain-code/references/python-constructs.md` | Pass 1 checklist: which Python constructs to name, and how to explain each. |
+| `explain-code/references/diagram-recipes.md` | Mermaid and ASCII patterns, and the rule for when a diagram earns its place. |
+| `explain-code/scripts/validate_explainer.py` | Stdlib-only mechanical validator. Also extracts §7 for preservation. |
+| `tests/test_explainer_validator.py` | Tests for the validator. Shared `tests/` so later skills can add to it. |
+| `README.md` | What the repo is, and the two commands that install it on a new machine. |
+| `.gitignore` | `.venv/`, `__pycache__/`, `.pytest_cache/`, `.DS_Store` |
+| `~/.claude/skills/explain-code` | Symlink to `explain-code/`, making the skill globally available. |
+| `~/Developer/healthcare-sft/docs/explainers/*.md` | Generated in Tasks 9-10. Belongs to that project, not to this repo. |
 
-A note on the symlink: the spec requires the skill live at `~/.claude/skills/explain-code`, but that path is not version-controlled, which defeats the reproducibility goal. Authoring in-repo and symlinking satisfies both. The trade-off is that the skill stops working if this repository is moved or deleted; Task 1 records that in the skill itself.
+Per-skill symlinks rather than symlinking the whole `~/.claude/skills/` directory: a directory symlink would also work, but it has to be torn down to add a skill that is not in this repo, and one `ln -s` per skill is a small price for keeping that door open.
 
 ---
 
-## Task 1: Scaffold and install
+## Task 1: Create the skills repository and install the skill
 
 **Files:**
-- Create: `skills/explain-code/SKILL.md`
-- Create: `skills/explain-code/references/.gitkeep`
-- Create: `skills/explain-code/scripts/.gitkeep`
+- Create: `~/Developer/claude-skills/` (new git repository)
+- Create: `README.md`, `.gitignore`
+- Create: `explain-code/SKILL.md`
+- Create: `explain-code/references/.gitkeep`, `explain-code/scripts/.gitkeep`
 - Create (symlink): `~/.claude/skills/explain-code`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: the directory layout every later task writes into, and a discoverable skill named `explain-code`.
+- Produces: the repository every later task writes into, a `.venv` with pytest, and a discoverable skill named `explain-code`.
 
-- [ ] **Step 1: Create the directory layout**
+- [ ] **Step 1: Create the repository and directory layout**
 
 ```bash
-mkdir -p skills/explain-code/references skills/explain-code/scripts
-touch skills/explain-code/references/.gitkeep skills/explain-code/scripts/.gitkeep
+mkdir -p ~/Developer/claude-skills/explain-code/references \
+         ~/Developer/claude-skills/explain-code/scripts \
+         ~/Developer/claude-skills/tests
+cd ~/Developer/claude-skills
+git init
+touch explain-code/references/.gitkeep explain-code/scripts/.gitkeep
 ```
 
-- [ ] **Step 2: Write a stub SKILL.md**
+Every remaining step in Tasks 1-8 runs from `~/Developer/claude-skills`.
 
-The stub only needs valid frontmatter and an honest body. The real procedure lands in Task 8. The `description` field is what Claude matches against, so it is written properly now rather than as a placeholder.
+- [ ] **Step 2: Create the dev environment**
 
-Create `skills/explain-code/SKILL.md`:
+pytest is a dev dependency of this repository. The validator itself imports
+nothing outside the standard library, and Task 2 onwards must keep it that way.
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install --quiet --upgrade pip pytest
+.venv/bin/python --version
+```
+Expected: `Python 3.14.x` — the system interpreter, deliberately different from
+healthcare-sft's 3.11. A validator that passes here and runs there is a
+validator that is actually portable.
+
+- [ ] **Step 3: Write `.gitignore` and `README.md`**
+
+```bash
+cat > .gitignore <<'EOF'
+.venv/
+__pycache__/
+.pytest_cache/
+.DS_Store
+EOF
+```
+
+```bash
+cat > README.md <<'EOF'
+# claude-skills
+
+Personal [Claude Code](https://claude.com/claude-code) skills, version
+controlled so they survive machines and can be improved deliberately rather
+than rewritten from memory each time.
+
+## Skills
+
+- **explain-code** — turn a source file into a persistent eight-section
+  explainer: how the code is written, what the data looks like, and why it is
+  built this way. Validated against the source rather than asserted.
+
+## Install on a new machine
+
+```bash
+git clone <this repo> ~/Developer/claude-skills
+ln -s ~/Developer/claude-skills/explain-code ~/.claude/skills/explain-code
+```
+
+One symlink per skill. Claude Code picks them up on next start.
+
+## Develop
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install pytest
+.venv/bin/python -m pytest tests/ -v
+```
+
+Scripts under any `skill/scripts/` directory must import only the standard
+library — they run inside arbitrary projects whose dependencies are unknown.
+EOF
+```
+
+- [ ] **Step 4: Write a stub SKILL.md**
+
+The stub needs valid frontmatter and an honest body. The real procedure lands
+in Task 8. The `description` field is what Claude matches against, so it is
+written properly now rather than as a placeholder.
+
+Create `explain-code/SKILL.md`:
 
 ```markdown
 ---
@@ -75,38 +156,32 @@ description: Use when the user wants to understand a source file - asks to expla
 
 Turn a source file into a persistent explainer document.
 
-**Status: scaffold.** The procedure is implemented in Task 8 of
-`docs/superpowers/plans/2026-08-18-explain-code-skill.md`. Do not use yet.
-
-## Installation note
-
-The source of truth for this skill is `skills/explain-code/` inside the
-healthcare-sft repository. `~/.claude/skills/explain-code` is a symlink to it.
-If that repository moves or is deleted, the symlink dangles and this skill
-stops loading. To relocate: delete the symlink and re-create it against the
-new path.
+**Status: scaffold.** The procedure is implemented in Task 8 of the
+implementation plan. Do not use yet.
 ```
 
-- [ ] **Step 3: Install the symlink**
+- [ ] **Step 5: Install the symlink**
 
 ```bash
 mkdir -p ~/.claude/skills
-ln -s "$(pwd)/skills/explain-code" ~/.claude/skills/explain-code
+ln -s ~/Developer/claude-skills/explain-code ~/.claude/skills/explain-code
 ```
 
-- [ ] **Step 4: Verify the symlink resolves**
+- [ ] **Step 6: Verify the symlink resolves**
 
 Run: `ls -L ~/.claude/skills/explain-code/`
-Expected: lists `SKILL.md`, `references`, `scripts`. A "No such file or directory" means the symlink is dangling — check the absolute path used in Step 3.
+Expected: lists `SKILL.md`, `references`, `scripts`. "No such file or directory"
+means the symlink is dangling — check the path used in Step 5.
 
 Run: `head -4 ~/.claude/skills/explain-code/SKILL.md`
-Expected: the frontmatter block, starting with `---` and containing `name: explain-code`.
+Expected: the frontmatter block, starting with `---` and containing
+`name: explain-code`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add skills/explain-code
-git commit -m "feat: scaffold explain-code skill and install symlink"
+git add -A
+git commit -m "feat: scaffold claude-skills repo and the explain-code skill"
 ```
 
 ---
@@ -114,7 +189,7 @@ git commit -m "feat: scaffold explain-code skill and install symlink"
 ## Task 2: Validator — header and section structure
 
 **Files:**
-- Create: `skills/explain-code/scripts/validate_explainer.py`
+- Create: `explain-code/scripts/validate_explainer.py`
 - Test: `tests/test_explainer_validator.py`
 
 **Interfaces:**
@@ -138,8 +213,8 @@ what these tests pin down.
 import importlib.util
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-VALIDATOR = REPO / "skills" / "explain-code" / "scripts" / "validate_explainer.py"
+SKILLS = Path(__file__).resolve().parent.parent   # the claude-skills repo root
+VALIDATOR = SKILLS / "explain-code" / "scripts" / "validate_explainer.py"
 
 
 def _load():
@@ -225,7 +300,7 @@ Expected: collection error — `FileNotFoundError` or `AttributeError`, because 
 
 - [ ] **Step 3: Write the implementation**
 
-Create `skills/explain-code/scripts/validate_explainer.py`:
+Create `explain-code/scripts/validate_explainer.py`:
 
 ```python
 """Mechanical checks on a generated explainer document.
@@ -325,7 +400,7 @@ Expected: 9 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add skills/explain-code/scripts/validate_explainer.py tests/test_explainer_validator.py
+git add explain-code/scripts/validate_explainer.py tests/test_explainer_validator.py
 git commit -m "feat: validate explainer header and section structure"
 ```
 
@@ -336,7 +411,7 @@ git commit -m "feat: validate explainer header and section structure"
 This is the completeness postcondition from the spec, made executable. Parsing with `ast` rather than regex means the symbol list cannot disagree with what Python actually defines.
 
 **Files:**
-- Modify: `skills/explain-code/scripts/validate_explainer.py` (append two functions)
+- Modify: `explain-code/scripts/validate_explainer.py` (append two functions)
 - Modify: `tests/test_explainer_validator.py` (append tests)
 
 **Interfaces:**
@@ -437,7 +512,7 @@ Expected: FAIL with `AttributeError: module 'validate_explainer' has no attribut
 
 - [ ] **Step 3: Write the implementation**
 
-Append to `skills/explain-code/scripts/validate_explainer.py`:
+Append to `explain-code/scripts/validate_explainer.py`:
 
 ```python
 def source_symbols(path):
@@ -505,7 +580,7 @@ Expected: 15 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add skills/explain-code/scripts/validate_explainer.py tests/test_explainer_validator.py
+git add explain-code/scripts/validate_explainer.py tests/test_explainer_validator.py
 git commit -m "feat: validate that every source symbol is listed and explained"
 ```
 
@@ -514,7 +589,7 @@ git commit -m "feat: validate that every source symbol is listed and explained"
 ## Task 4: Validator — anchoring, exercises, notes extraction, and CLI
 
 **Files:**
-- Modify: `skills/explain-code/scripts/validate_explainer.py` (append four functions and `main`)
+- Modify: `explain-code/scripts/validate_explainer.py` (append four functions and `main`)
 - Modify: `tests/test_explainer_validator.py` (append tests)
 
 **Interfaces:**
@@ -620,7 +695,7 @@ Expected: FAIL with `AttributeError: module 'validate_explainer' has no attribut
 
 - [ ] **Step 3: Write the implementation**
 
-Append to `skills/explain-code/scripts/validate_explainer.py`:
+Append to `explain-code/scripts/validate_explainer.py`:
 
 ```python
 BULLET = re.compile(r"^\s*[-*]\s+(.*)$", re.M)
@@ -717,7 +792,7 @@ Expected: 27 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add skills/explain-code/scripts/validate_explainer.py tests/test_explainer_validator.py
+git add explain-code/scripts/validate_explainer.py tests/test_explainer_validator.py
 git commit -m "feat: validate anchoring and exercises, add notes extraction and CLI"
 ```
 
@@ -726,8 +801,8 @@ git commit -m "feat: validate anchoring and exercises, add notes extraction and 
 ## Task 5: Reference — the document template
 
 **Files:**
-- Create: `skills/explain-code/references/document-template.md`
-- Delete: `skills/explain-code/references/.gitkeep`
+- Create: `explain-code/references/document-template.md`
+- Delete: `explain-code/references/.gitkeep`
 - Modify: `tests/test_explainer_validator.py` (append one test)
 
 **Interfaces:**
@@ -746,7 +821,7 @@ def test_template_headings_match_the_validator_exactly():
     skill produces documents its own validator rejects, and the failure looks
     like a bug in the document rather than in the pair of files.
     """
-    template = REPO / "skills" / "explain-code" / "references" / "document-template.md"
+    template = SKILLS / "explain-code" / "references" / "document-template.md"
     headings = [(int(m.group(1)), m.group(2).strip()) for m in v.HEADING.finditer(template.read_text())]
     assert headings == v.SECTIONS
 ```
@@ -758,7 +833,7 @@ Expected: FAIL with `FileNotFoundError` — the template does not exist.
 
 - [ ] **Step 3: Write the template**
 
-Create `skills/explain-code/references/document-template.md`:
+Create `explain-code/references/document-template.md`:
 
 ````markdown
 # Document template
@@ -801,7 +876,7 @@ that every symbol here is also discussed in a later section.
 | Package | What is used from it | Why |
 |---|---|---|
 
-Get the symbol list from `python skills/explain-code/scripts/validate_explainer.py`'s
+Get the symbol list from `python explain-code/scripts/validate_explainer.py`'s
 `source_symbols`, or read it off the file directly. Do not omit dunder methods —
 `__call__` and `__init__` are exactly the ones a learner needs explained.
 
@@ -916,7 +991,7 @@ Never write content here. Never delete content found here.
 - [ ] **Step 4: Run the test to verify it passes**
 
 ```bash
-rm -f skills/explain-code/references/.gitkeep
+rm -f explain-code/references/.gitkeep
 .venv/bin/python -m pytest tests/test_explainer_validator.py -v
 ```
 Expected: 28 passed.
@@ -924,7 +999,7 @@ Expected: 28 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -A skills/explain-code/references tests/test_explainer_validator.py
+git add -A explain-code/references tests/test_explainer_validator.py
 git commit -m "feat: add explainer document template pinned to validator sections"
 ```
 
@@ -933,7 +1008,7 @@ git commit -m "feat: add explainer document template pinned to validator section
 ## Task 6: Reference — Python constructs checklist
 
 **Files:**
-- Create: `skills/explain-code/references/python-constructs.md`
+- Create: `explain-code/references/python-constructs.md`
 
 **Interfaces:**
 - Consumes: nothing.
@@ -941,7 +1016,7 @@ git commit -m "feat: add explainer document template pinned to validator section
 
 - [ ] **Step 1: Write the checklist**
 
-Create `skills/explain-code/references/python-constructs.md`:
+Create `explain-code/references/python-constructs.md`:
 
 ````markdown
 # Python constructs — Pass 1 checklist
@@ -1019,7 +1094,7 @@ quoting the line.
 
 The validator parses `## N. Title` headings. This file uses unnumbered headings, so it must not accidentally match.
 
-Run: `grep -nE '^## [0-9]+\.' skills/explain-code/references/python-constructs.md || echo "clean: no numbered sections"`
+Run: `grep -nE '^## [0-9]+\.' explain-code/references/python-constructs.md || echo "clean: no numbered sections"`
 Expected: `clean: no numbered sections`
 
 - [ ] **Step 3: Verify the full test suite still passes**
@@ -1030,7 +1105,7 @@ Expected: all tests pass, 28 in `test_explainer_validator.py`.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add skills/explain-code/references/python-constructs.md
+git add explain-code/references/python-constructs.md
 git commit -m "feat: add Python constructs checklist for pass 1"
 ```
 
@@ -1039,7 +1114,7 @@ git commit -m "feat: add Python constructs checklist for pass 1"
 ## Task 7: Reference — diagram recipes
 
 **Files:**
-- Create: `skills/explain-code/references/diagram-recipes.md`
+- Create: `explain-code/references/diagram-recipes.md`
 
 **Interfaces:**
 - Consumes: nothing.
@@ -1047,7 +1122,7 @@ git commit -m "feat: add Python constructs checklist for pass 1"
 
 - [ ] **Step 1: Write the recipes**
 
-Create `skills/explain-code/references/diagram-recipes.md`:
+Create `explain-code/references/diagram-recipes.md`:
 
 ````markdown
 # Diagram recipes
@@ -1140,13 +1215,13 @@ For dicts, schemas, and records, a table beats a diagram:
 
 - [ ] **Step 2: Verify no stray numbered sections**
 
-Run: `grep -nE '^## [0-9]+\.' skills/explain-code/references/diagram-recipes.md || echo "clean: no numbered sections"`
+Run: `grep -nE '^## [0-9]+\.' explain-code/references/diagram-recipes.md || echo "clean: no numbered sections"`
 Expected: `clean: no numbered sections`
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add skills/explain-code/references/diagram-recipes.md
+git add explain-code/references/diagram-recipes.md
 git commit -m "feat: add mermaid and ASCII diagram recipes"
 ```
 
@@ -1157,8 +1232,8 @@ git commit -m "feat: add mermaid and ASCII diagram recipes"
 This replaces the Task 1 stub with the real thing. Keep it short: it loads on every invocation, and the references carry the bulk.
 
 **Files:**
-- Modify: `skills/explain-code/SKILL.md` (full rewrite)
-- Delete: `skills/explain-code/scripts/.gitkeep`
+- Modify: `explain-code/SKILL.md` (full rewrite)
+- Delete: `explain-code/scripts/.gitkeep`
 
 **Interfaces:**
 - Consumes: `references/document-template.md`, `references/python-constructs.md`, `references/diagram-recipes.md`, `scripts/validate_explainer.py` and its `--notes` flag.
@@ -1166,7 +1241,7 @@ This replaces the Task 1 stub with the real thing. Keep it short: it loads on ev
 
 - [ ] **Step 1: Write SKILL.md**
 
-Replace the contents of `skills/explain-code/SKILL.md`:
+Replace the contents of `explain-code/SKILL.md`:
 
 ````markdown
 ---
@@ -1321,15 +1396,15 @@ keeping back in by re-running, or tell the reader to put it in §7.
 
 ## Installation note
 
-Source of truth is `skills/explain-code/` in the healthcare-sft repository;
-`~/.claude/skills/explain-code` is a symlink to it. If that repository moves,
-re-create the symlink against the new path.
+Source of truth is the `claude-skills` repository; `~/.claude/skills/explain-code`
+is a symlink into it. If that repository moves, re-create the symlink against
+the new path.
 ````
 
 - [ ] **Step 2: Verify the skill loads**
 
 ```bash
-rm -f skills/explain-code/scripts/.gitkeep
+rm -f explain-code/scripts/.gitkeep
 ls -L ~/.claude/skills/explain-code/references/
 ```
 Expected: `diagram-recipes.md  document-template.md  python-constructs.md`
@@ -1345,13 +1420,15 @@ Expected: all pass.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add -A skills/explain-code
+git add -A explain-code
 git commit -m "feat: implement explain-code procedure and quality bar"
 ```
 
 ---
 
 ## Task 9: Acceptance — run against `src/tokenization.py`
+
+**Working directory changes here: `~/Developer/healthcare-sft`.** The skill is finished; this task and the next one use it against real code. Skill fixes go in the skills repo, generated explainers stay in healthcare-sft, and the two get separate commits.
 
 The first real use. This is the task that finds out whether the skill teaches anything, and the acceptance criteria come straight from the spec.
 
@@ -1383,9 +1460,13 @@ A §3 with unlabelled shapes and no probe output is a **procedure failure**, not
 - [ ] **Step 3: Run the validator**
 
 ```bash
-.venv/bin/python skills/explain-code/scripts/validate_explainer.py \
+cd ~/Developer/healthcare-sft
+python3 ~/Developer/claude-skills/explain-code/scripts/validate_explainer.py \
   docs/explainers/tokenization.md --source src/tokenization.py
 ```
+
+Note `python3`, not the venv: the validator is stdlib-only, and running it with
+the bare system interpreter is the standing proof of that.
 Expected: `OK: docs/explainers/tokenization.md passes all mechanical checks`, exit 0.
 
 If it fails, fix the *document* if the document is wrong, or fix `SKILL.md` if the procedure led it astray. Record which.
@@ -1407,7 +1488,7 @@ For each unanswered question, fix the `SKILL.md` step responsible — not just t
 
 - [ ] **Step 5: Verify §7 is present and empty**
 
-Run: `.venv/bin/python skills/explain-code/scripts/validate_explainer.py docs/explainers/tokenization.md --notes`
+Run: `python3 ~/Developer/claude-skills/explain-code/scripts/validate_explainer.py docs/explainers/tokenization.md --notes`
 Expected: the single line `_Yours. Preserved verbatim when this document is regenerated._`
 
 - [ ] **Step 6: Verify notes survive regeneration**
@@ -1424,8 +1505,17 @@ Expected: `1`. A `0` means step 2 or 9 of `SKILL.md` is broken — this is the f
 - [ ] **Step 7: Commit**
 
 ```bash
-git add docs/explainers/tokenization.md skills/explain-code/SKILL.md
-git commit -m "feat: generate and validate the first explainer for tokenization.py"
+cd ~/Developer/healthcare-sft
+git add docs/explainers/tokenization.md
+git commit -m "docs: add generated explainer for tokenization.py"
+```
+
+If steps 2-6 required fixes to the skill, commit those separately:
+
+```bash
+cd ~/Developer/claude-skills
+git add -A
+git commit -m "fix: correct explain-code procedure defects found in first real run"
 ```
 
 ---
@@ -1448,7 +1538,7 @@ The spec claims the skill works on any script. This task tests that claim rather
 /explain-code src/prompts.py
 ```
 
-Then run: `.venv/bin/python skills/explain-code/scripts/validate_explainer.py docs/explainers/prompts.md --source src/prompts.py`
+Then run: `python3 ~/Developer/claude-skills/explain-code/scripts/validate_explainer.py docs/explainers/prompts.md --source src/prompts.py`
 Expected: exit 0.
 
 - [ ] **Step 2: Check the glossary duplication is tolerable**
@@ -1496,28 +1586,34 @@ Verify by reading the output:
 
 - [ ] **Step 5: Validate without a source (coverage checks skip for non-Python)**
 
-Run: `.venv/bin/python skills/explain-code/scripts/validate_explainer.py <output path>`
+Run: `python3 ~/Developer/claude-skills/explain-code/scripts/validate_explainer.py <output path>`
 Expected: exit 0. Coverage is skipped because the source is not `.py`; the structural checks still apply.
 
 - [ ] **Step 6: Fix any procedure defects found and re-verify**
 
 Any fix goes into `SKILL.md` or `references/document-template.md`, never into a single generated document. Re-run the affected explainer afterwards.
 
-Run: `.venv/bin/python -m pytest tests/ -v`
+Run: `cd ~/Developer/claude-skills && .venv/bin/python -m pytest tests/ -v`
 Expected: all pass — confirm the template heading test still holds after any template edit.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Commit, in both repositories**
 
 ```bash
-git add docs/explainers/prompts.md skills/explain-code
-git commit -m "feat: verify explain-code generality on a second module and a JS file"
+cd ~/Developer/healthcare-sft
+git add docs/explainers/prompts.md
+git commit -m "docs: add generated explainer for prompts.py"
+
+cd ~/Developer/claude-skills
+git add -A
+git commit -m "fix: correct explain-code defects found on a second module and a JS file"
 ```
 
 ---
 
 ## Done when
 
-- `.venv/bin/python -m pytest tests/ -v` passes, including 28 validator tests.
+- `cd ~/Developer/claude-skills && .venv/bin/python -m pytest tests/ -v` passes, with 28 validator tests.
+- `git clone` of the skills repo plus one `ln -s` is the whole install on a new machine.
 - `/explain-code` is discoverable in a fresh session and runs end to end.
 - `docs/explainers/tokenization.md` and `docs/explainers/prompts.md` both validate at exit 0.
 - All six spec acceptance questions are answered by the tokenization explainer.

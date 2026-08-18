@@ -73,11 +73,25 @@ A personal-scope skill, so it is available in every repository:
     document-template.md          # the full section-by-section output template
     python-constructs.md          # Pass 1 checklist of constructs to name
     diagram-recipes.md            # mermaid + ASCII shape diagram patterns
+  scripts/
+    validate_explainer.py         # stdlib-only mechanical checks on the output
 ```
 
 `SKILL.md` stays short so invocation is cheap. The reference files are read
 only at the point in the procedure where they are needed — progressive
 disclosure, matching the pattern used by the superpowers plugin skills.
+
+**Source of truth is a standalone `claude-skills` git repository**, with
+`~/.claude/skills/explain-code` symlinked to the `explain-code/` directory
+inside it. `~/.claude/` is not version-controlled, which would defeat the
+reproducibility goal; and hosting the skill inside a project repository would
+tie a general-purpose tool to one project's lifetime. A dedicated repository
+avoids both, is portable to another machine with a clone and a symlink, and
+has room for later skills.
+
+The skill must therefore assume nothing about the project it is invoked in.
+In particular the validator is standard-library-only, so it runs under
+whatever interpreter is present rather than requiring an install.
 
 ### Invocation
 
