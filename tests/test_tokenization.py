@@ -6,6 +6,7 @@ conversation. If a tokenizer ever violated that, labels would silently
 misalign by a token or two and training would quietly degrade.
 """
 
+import pytest
 import torch
 from transformers import AutoTokenizer
 
@@ -99,3 +100,17 @@ def test_collator_pads_inputs_with_pad_id_and_labels_with_ignore_index():
     # Attention mask must hide padding from the attention computation.
     assert batch["attention_mask"][1].tolist() == [1, 1, 0]
     assert batch["labels"].dtype == torch.long
+
+
+def test_guard_raises_when_answer_starts_with_a_newline():
+    tok = _tok()
+    # This is not hypothetical: one row of MTS-Dialogue has a section_text
+    # beginning with "\n". The prompt already ends with "\n" (token 198) and
+    # BPE merges the pair into "\n\n" (token 271), so the prompt is no longer a
+    # token-level prefix of the full sequence. Without this guard the example's
+    # labels would shift by one and nothing would complain. data_prep strips
+    # targets to prevent it; this test proves the guard catches it if that ever
+    # regresses.
+    msgs = build_classification_messages("itchy rash", LABELS, answer="\npsoriasis")
+    with pytest.raises(ValueError, match="prefix-stable"):
+        build_training_example(msgs, tok, max_length=1024)

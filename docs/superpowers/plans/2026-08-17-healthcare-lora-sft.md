@@ -681,7 +681,7 @@ class PadCollator:
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_tokenization.py -v`
-Expected: 7 passed.
+Expected: 8 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -720,7 +720,9 @@ print('SUM', load_dataset('har1/MTS_Dialogue-Clinical_Note'))
 "
 ```
 
-Expected: classification has `train` (853) and `test` (212) with `input_text` / `output_text`; summarization has `train` (1201) and `validation` (100) with `dialogue` / `section_text`. **If the split or column names differ, use the real ones and update Step 3 accordingly** — do not code against this plan's assumption.
+VERIFIED 2026-08-18. Classification: `train` (853) / `test` (212), columns `input_text` / `output_text` — as assumed. Summarization: **`train` (1301) ONLY — there is no `validation` split**, columns `ID` / `section_header` / `section_text` / `dialogue`. The implementation therefore carves its own 100-row test set with `train_test_split(test_size=100, seed=42)`.
+
+Also verified: `section_text` already uses the four `REQUIRED_SECTIONS` headers and the "N/A" convention, but only 85.7% of gold notes contain all four. That is the honest ceiling for the section-adherence metric and the README must say so.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -909,7 +911,7 @@ Expected: 2 passed.
 .venv/bin/python -m src.data_prep
 ```
 
-Expected: 22 labels; roughly 2000 training examples; a small number of summarization drops; 212 and 100 test examples.
+ACTUAL: 22 labels; 2040 training examples (851 classification / 1189 summarization); 11 summarization rows dropped as too long; 3 rows dropped as train/test duplicates; 212 and 100 test examples.
 
 - [ ] **Step 7: Read three formatted examples with your own eyes**
 
@@ -1161,7 +1163,7 @@ Expected: 12 passed.
 - [ ] **Step 5: Run the whole suite**
 
 Run: `.venv/bin/python -m pytest -v`
-Expected: 35 passed.
+Expected: 36 passed.
 
 - [ ] **Step 6: Commit**
 
@@ -1945,7 +1947,7 @@ From `docs/CONCEPTS.md` §10.
 ```bash
 .venv/bin/python -m pytest -v
 ```
-Expected: 35 passed.
+Expected: 36 passed.
 
 - [ ] **Step 4: Verify every README number against `results/metrics.json`**
 
@@ -1965,7 +1967,7 @@ git push
 
 ## Definition of Done
 
-- [ ] `.venv/bin/python -m pytest` passes (35 tests)
+- [ ] `.venv/bin/python -m pytest` passes (36 tests)
 - [ ] `data/` contains four files; the label count is 22
 - [ ] `adapters/qwen-healthcare-lora/` contains `adapter_config.json` and `adapter_model.safetensors`
 - [ ] `results/metrics.json` contains **both** `base` and `tuned` entries for both tasks
