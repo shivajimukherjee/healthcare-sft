@@ -1646,14 +1646,18 @@ def main():
     }
     metrics_path.write_text(json.dumps(all_metrics, indent=2))
 
-    # Confusion matrix. With 22 classes it is dense, but it makes systematic
-    # confusions visible in a way a single accuracy number cannot.
+    # Confusion matrix, plotted over the 22 labels PLUS an explicit INVALID
+    # column. The extra column is load-bearing: sklearn DROPS any sample whose
+    # prediction is not in `labels`, so plotting the 22 alone would silently
+    # discard most of the base model's 212 examples and render a matrix that
+    # looks fine while describing a fraction of the data.
     extracted = [extract_label(p, labels) for p in clf_preds]
     fig, ax = plt.subplots(figsize=(14, 12))
     ConfusionMatrixDisplay.from_predictions(
         [normalize_label(g) for g in clf_golds],
         extracted,
-        labels=labels,
+        labels=list(labels) + [INVALID],
+        display_labels=[*labels, "INVALID"],
         xticks_rotation="vertical",
         ax=ax,
         colorbar=False,
