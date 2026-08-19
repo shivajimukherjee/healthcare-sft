@@ -1334,7 +1334,7 @@ def main():
         save_strategy="epoch",
         save_total_limit=1,
         fp16=True,          # NOT bf16 — see module docstring
-        optim="paged_adamw_8bit",
+        optim=args.optim,   # adamw_torch, NOT paged — see Task 6 notes
         gradient_checkpointing=True,
         report_to="none",   # no wandb prompt in Colab
         seed=SEED,
@@ -1459,6 +1459,12 @@ Then update the clone URL in the notebook's cell 4 to the real repository URL, a
 Open `notebooks/train_colab.ipynb` in Colab with a T4 runtime and run cells 1–6.
 Expected: `print_trainable_parameters` reports roughly 1% trainable; ten steps complete without OOM; a finite loss is printed.
 **Stop and fix here if anything fails** — a smoke failure at 60 seconds is far cheaper than the same failure 20 minutes into the full run.
+
+KNOWN ISSUE (hit 2026-08-20): `paged_adamw_8bit` raised
+`CUDA error: an illegal memory access` inside bitsandbytes' `sync_gpu()` at
+step 5 of 765 on a Colab T4. The paged optimizer targets full fine-tuning; at
+18.5M LoRA parameters it saves 111 MB (0.7% of a T4) in exchange for a fragile
+unified-memory path. Default is now `adamw_torch`.
 
 - [ ] **Step 6: Run full training**
 

@@ -31,9 +31,17 @@ target_modules
             shortcut and measurably underperforms.
 fp16        The T4 is a Turing GPU with NO bf16 support. Using bf16 here fails.
 sdpa        flash_attention_2 requires Ampere or newer; on a T4 it will not load.
-paged_adamw_8bit
-            8-bit optimizer states, paged to host RAM on a spike. Optimizer state
-            is often the thing that OOMs, not the weights.
+optim       `adamw_torch`, deliberately NOT `paged_adamw_8bit`.
+
+            The paged 8-bit optimizer exists for FULL fine-tuning, where
+            optimizer state is many gigabytes and paging it to host RAM is the
+            difference between running and not. We train 18.5M LoRA parameters,
+            so Adam state is 148 MB in fp32 against 37 MB paged-8-bit — a 111 MB
+            saving, 0.7% of a T4's 15 GB, bought with a CUDA unified-memory code
+            path that raised `illegal memory access` inside bitsandbytes'
+            sync_gpu() a few steps into training. Wrong trade at this scale.
+            bitsandbytes still handles the 4-bit base weights; it is only out of
+            the optimizer.
 
 A NOTE ON WARMUP
 ----------------
@@ -91,6 +99,12 @@ def main():
     parser.add_argument("--grad-accum", type=int, default=4)
     parser.add_argument("--lora-r", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
+    parser.add_argument(
+        "--optim",
+        default="adamw_torch",
+        help="Optimizer. Default is pure-PyTorch AdamW; see the module "
+        "docstring for why the paged 8-bit variant is avoided.",
+    )
     parser.add_argument(
         "--limit", type=int, default=None, help="Use N examples only (smoke test)."
     )
@@ -160,7 +174,7 @@ def main():
         save_strategy="epoch",
         save_total_limit=1,
         fp16=True,          # NOT bf16 — see module docstring
-        optim="paged_adamw_8bit",
+        optim=args.optim,   # adamw_torch — see module docstring
         gradient_checkpointing=True,
         report_to="none",   # no wandb prompt in Colab
         seed=SEED,
