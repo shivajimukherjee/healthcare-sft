@@ -1329,7 +1329,7 @@ def main():
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=args.learning_rate,
         lr_scheduler_type="cosine",
-        warmup_ratio=0.03,
+        warmup_steps=warmup_steps,  # transformers 5.x removed warmup_ratio
         logging_steps=10,
         save_strategy="epoch",
         save_total_limit=1,
@@ -1463,7 +1463,7 @@ Expected: `print_trainable_parameters` reports roughly 1% trainable; ten steps c
 - [ ] **Step 6: Run full training**
 
 Run notebook cell 8 (`!python -m src.train`).
-Expected: ~770 steps, 20–40 minutes, loss falling from roughly 2–3 toward under 1, never `nan`.
+Expected: 765 steps, 20–40 minutes, loss falling from roughly 2–3 toward under 1, never `nan`.
 
 - [ ] **Step 7: Commit the adapter**
 
