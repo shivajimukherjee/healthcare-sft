@@ -392,7 +392,7 @@ def build_summarization_messages(dialogue, answer=None):
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_prompts.py -v`
-Expected: 12 passed.
+Expected: 13 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1158,12 +1158,12 @@ def rouge_metrics(preds, refs):
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_metrics.py -v`
-Expected: 12 passed.
+Expected: 13 passed.
 
 - [ ] **Step 5: Run the whole suite**
 
 Run: `.venv/bin/python -m pytest -v`
-Expected: 36 passed.
+Expected: 37 passed.
 
 - [ ] **Step 6: Commit**
 
@@ -1947,7 +1947,7 @@ From `docs/CONCEPTS.md` §10.
 ```bash
 .venv/bin/python -m pytest -v
 ```
-Expected: 36 passed.
+Expected: 37 passed.
 
 - [ ] **Step 4: Verify every README number against `results/metrics.json`**
 
@@ -1967,7 +1967,7 @@ git push
 
 ## Definition of Done
 
-- [ ] `.venv/bin/python -m pytest` passes (36 tests)
+- [ ] `.venv/bin/python -m pytest` passes (37 tests)
 - [ ] `data/` contains four files; the label count is 22
 - [ ] `adapters/qwen-healthcare-lora/` contains `adapter_config.json` and `adapter_model.safetensors`
 - [ ] `results/metrics.json` contains **both** `base` and `tuned` entries for both tasks
