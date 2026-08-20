@@ -1,0 +1,32 @@
+{
+  "base": {
+    "classification": {
+      "accuracy": 0.30660377358490565,
+      "macro_f1": 0.2581406707481447,
+      "invalid_rate": 0.1509433962264151,
+      "n": 212
+    },
+    "summarization": {
+      "rouge1": 0.4797334398169509,
+      "rouge2": 0.3046173707024492,
+      "rougeL": 0.41849279657179983,
+      "section_adherence": 0.96,
+      "n": 100
+    }
+  },
+  "tuned": {
+    "classification": {
+      "accuracy": 0.9198113207547169,
+      "macro_f1": 0.9163428012710308,
+      "invalid_rate": 0.0,
+      "n": 212
+    },
+    "summarization": {
+      "rouge1": 0.7151443657212536,
+      "rouge2": 0.5628991875649505,
+      "rougeL": 0.652677929444044,
+      "section_adherence": 1.0,
+      "n": 100
+    }
+  }
+}
