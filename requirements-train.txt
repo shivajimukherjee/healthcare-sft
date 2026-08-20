@@ -1,8 +1,18 @@
 # Colab T4 environment. torch is preinstalled by Colab and deliberately
 # NOT pinned here — pinning it forces a multi-GB reinstall and often
 # breaks the CUDA build Colab ships.
+#
+# This file covers BOTH training and evaluation, because the notebook runs
+# src.train and src.evaluate in the same runtime. evaluate.py imports
+# metrics.py, which needs rouge-score and scikit-learn, and it plots with
+# matplotlib. Colab already satisfies scikit-learn and matplotlib, so pip
+# skips them, but they are listed because this file must describe what the
+# code needs — not what one particular host happens to preinstall.
 transformers>=4.44
 datasets>=2.20
 peft>=0.12
 bitsandbytes>=0.43
 accelerate>=0.33
+rouge-score>=0.1.2
+scikit-learn>=1.4
+matplotlib>=3.8
