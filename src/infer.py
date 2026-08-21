@@ -36,6 +36,34 @@ DISCLAIMER = (
 )
 
 
+def _resolve_device():
+    """Pick the best local device and a dtype it actually supports.
+
+    MPS (Apple's GPU backend) handles fp16 well. Plain CPU does not -- several
+    ops fall back or run very slowly in fp16 -- so CPU gets fp32, at the cost
+    of 6 GB instead of 3 GB.
+    """
+    if torch.backends.mps.is_available():
+        return "mps", torch.float16
+    return "cpu", torch.float32
+
+
+def _assert_no_meta_parameters(model):
+    """Fail loudly if any weight is a placeholder rather than a real tensor.
+
+    A `meta` parameter has a shape but no data. Loading an adapter into one
+    silently succeeds and changes nothing, so without this check the demo would
+    happily run the BASE model while claiming to run the tuned one. Turning a
+    silent wrong answer into a crash is the whole point.
+    """
+    meta = [n for n, p in model.named_parameters() if p.device.type == "meta"]
+    if meta:
+        raise RuntimeError(
+            f"{len(meta)} parameters are on the meta device (e.g. {meta[0]}). "
+            "The model was offloaded and the adapter would be silently ignored."
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", choices=["classify", "summarize"], required=True)
@@ -46,16 +74,27 @@ def main():
     args = parser.parse_args()
 
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
+
     # No 4-bit here: bitsandbytes has no Apple Silicon support, and at 1.5B
     # fp16 fits in 8 GB comfortably anyway. This is why infer.py does not reuse
     # evaluate.load_model, which quantizes.
-    model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL, dtype=torch.float16, device_map="auto"
-    )
+    #
+    # And deliberately NO device_map="auto". On an 8 GB Mac accelerate decides
+    # it cannot fit the model, offloads layers to disk as `meta` (placeholder)
+    # parameters, and PEFT then "loads" the adapter into those placeholders --
+    # a documented no-op that discards the adapter. We load on CPU, attach the
+    # adapter while every weight is real, and only then move to the device.
+    device, dtype = _resolve_device()
+    print(f"loading on {device} ({dtype})...", flush=True)
+
+    model = AutoModelForCausalLM.from_pretrained(BASE_MODEL, dtype=dtype)
     if not args.no_adapter:
         from peft import PeftModel
 
         model = PeftModel.from_pretrained(model, args.adapter)
+
+    _assert_no_meta_parameters(model)
+    model.to(device)
     model.eval()
 
     if args.task == "classify":
