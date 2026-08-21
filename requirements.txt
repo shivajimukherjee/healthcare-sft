@@ -9,3 +9,9 @@ scikit-learn>=1.4
 rouge-score>=0.1.2
 matplotlib>=3.8
 pytest>=8.0
+
+# Demo notebook (notebooks/demo.ipynb). ipykernel registers the venv as a
+# Jupyter kernel so VS Code / Jupyter run the notebook against THIS
+# environment rather than whichever python3 kernel happens to be default.
+ipykernel>=6.29
+nbformat>=5.10
